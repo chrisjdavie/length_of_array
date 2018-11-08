@@ -64,4 +64,5 @@ class TestFindListLengthBetweenBounds(TestCase):
         with patch("length_of_list.length_of_list.LOOP_LIMIT",
                    patched_loop_limit):
             with self.assertRaises(ValueError):
-                find_list_length_between_bounds(target_list, lower_bound, upper_bound)
+                find_list_length_between_bounds(
+                    target_list, lower_bound, upper_bound)
