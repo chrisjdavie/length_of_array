@@ -7,13 +7,24 @@ from length_of_list.length_of_list import find_upper_lower_bounds_list, \
     find_list_length_between_bounds, length_of_list
 
 
+class FakeList:
+    """A list that only can only be accessed with incides. If it's an invalid
+    index it raises InvalidIndexError."""
+
+    def __init__(self, data):
+        self._data = data
+
+    def __getitem__(self, i):
+        return self._data[i]
+
+
 class TestLengthOfList(TestCase):
     """Test full run"""
 
     @parameterized.expand(((i,) for i in range(20)))
     def test(self, list_length):
 
-        target_list = [1] * list_length
+        target_list = FakeList([1] * list_length)
         self.assertEqual(list_length, length_of_list(target_list))
 
 
@@ -26,7 +37,7 @@ class TestFindUpperLowerBoundsList(TestCase):
     @parameterized.expand(LIST_LENGTHS_WITH_UPPER_LOWER_BOUNDS)
     def test(self, list_length, expected_lower_bound, expected_upper_bound):
 
-        target_list = [1] * list_length
+        target_list = FakeList([1] * list_length)
 
         lower_bound, upper_bound = find_upper_lower_bounds_list(target_list)
 
@@ -38,7 +49,7 @@ class TestFindUpperLowerBoundsList(TestCase):
         patched_loop_limit = 2
         with patch("length_of_list.length_of_list.LOOP_LIMIT",
                    patched_loop_limit):
-            target_list = [1] * (2 ** (patched_loop_limit - 1) + 1)
+            target_list = FakeList([1] * (2 ** (patched_loop_limit - 1) + 1))
             with self.assertRaises(ValueError):
                 find_upper_lower_bounds_list(target_list)
 
@@ -47,7 +58,7 @@ class TestFindListLengthBetweenBounds(TestCase):
 
     @parameterized.expand(LIST_LENGTHS_WITH_UPPER_LOWER_BOUNDS)
     def test(self, list_length, lower_bound, upper_bound):
-        target_list = [1] * list_length
+        target_list = FakeList([1] * list_length)
 
         reported_list_length = find_list_length_between_bounds(
             target_list, lower_bound, upper_bound)
@@ -56,11 +67,11 @@ class TestFindListLengthBetweenBounds(TestCase):
 
     def test_raises_when_exceeds_loop_limit(self):
 
-        target_list = [1] * 11
+        target_list = FakeList([1] * 11)
         lower_bound = 8
         upper_bound = 16
 
-        patched_loop_limit = 1
+        patched_loop_limit = 0
         with patch("length_of_list.length_of_list.LOOP_LIMIT",
                    patched_loop_limit):
             with self.assertRaises(ValueError):

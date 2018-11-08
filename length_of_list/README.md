@@ -8,12 +8,13 @@ I have assumed additionally this list is aasked for the value at index `i` via `
 
 ## How to run
 
-Requires Python 3.X (tested with 3.6 and 3.7). Requires parameterized to be
-installed
+Requires Python 3.X (tested with 3.6 and 3.7). The tests require parameterized 
+to be installed
 
 `pip install parameterized`
 
-Tests are in `length_of_list/tests.py`, and can be run with the command
+Tests are in `length_of_list/tests.py`, and can be run with the command (from
+the parent directory of this one)
 
 `python -m unittest length_of_list/tests.py`
 

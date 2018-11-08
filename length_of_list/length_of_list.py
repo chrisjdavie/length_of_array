@@ -7,7 +7,7 @@ from typing import Tuple
 LOOP_LIMIT: int = 10000
 
 
-def length_of_list(target_list: list) -> int:
+def length_of_list(target_list) -> int:
     """
     Finds the length of a list.
 
@@ -19,7 +19,7 @@ def length_of_list(target_list: list) -> int:
         target_list, upper_bound, lower_bound)
 
 
-def find_upper_lower_bounds_list(target_list: list) -> Tuple[int, int]:
+def find_upper_lower_bounds_list(target_list) -> Tuple[int, int]:
     """
     Find the upper and lower bounds of the length of a 'list'
 
@@ -43,7 +43,7 @@ def find_upper_lower_bounds_list(target_list: list) -> Tuple[int, int]:
 
 
 def find_list_length_between_bounds(
-        target_list: list, lower_bound: int, upper_bound: int) -> int:
+        target_list, lower_bound: int, upper_bound: int) -> int:
     """
     Search for the length of a list within lower_bound and upper_bound.
 
