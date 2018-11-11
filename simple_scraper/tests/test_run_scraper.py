@@ -1,90 +1,160 @@
+"""
+Various forms of integration tests on the scraper runners, with the web
+requests stubbed out.
+
+Also some unit tests for stability of the connetion
+"""
+from contextlib import asynccontextmanager
+import json
+import logging
+import os
+from pathlib import Path
 import pickle
+from tempfile import NamedTemporaryFile
 
-from asynctest import TestCase
+from aiohttp.client_exceptions import InvalidURL
+from asynctest import TestCase, patch, strict
+from asynctest.mock import MagicMock, CoroutineMock
 
-from simple_scraper.run_scraper import ImageTitleParser, run, SiteData, \
-    ImageData
+from simple_scraper.models import SiteData
+from simple_scraper.run_scraper import get_html, logger, run, run_from_stdin
+from simple_scraper.tests.data.website_results import PARAMETERIZED_SITEDATA
+
+logger.setLevel(logging.WARNING)
+
+RUN_SCRAPER = "simple_scraper.run_scraper"
+RUN_SCRAPER_CLIENT_SESSION = RUN_SCRAPER + ".ClientSession"
+
+
+class StubResponse:
+    """Stub of an aiohttp repsonse"""
+
+    def __init__(self, url):
+        self._url = url
+
+    async def text(self):
+        for path, sitedata in PARAMETERIZED_SITEDATA:
+            if sitedata.url == self._url:
+                with path.open("rb") as data_fh:
+                    return pickle.load(data_fh)
+
+
+class StubSession:
+    """Stub of an aiohttp Session"""
+
+    @asynccontextmanager
+    async def get(self, url):
+        yield StubResponse(url)
+
+
+@asynccontextmanager
+async def stub_client_session():
+    """Stub of aiohttp.ClientSession"""
+    yield StubSession()
+
+
+class TestRunFromStdin(TestCase):
+    """
+    Simulates being run from the commandline.
+
+    python simple_scraper/run_scraper.py [filename] < [list of urls]
+
+    Mocks out stdin and argvs to achieve desired effect. Checks output file is
+    created, and that it's a json.
+    """
+
+    @patch(RUN_SCRAPER_CLIENT_SESSION, new=stub_client_session)
+    @strict
+    async def test(self):
+
+        def stub_stdin():
+            for _, site_data in PARAMETERIZED_SITEDATA:
+                yield site_data.url
+
+        # generate a unique name that doesn't exist on the filesystem
+        with NamedTemporaryFile() as tmp:
+            pass
+
+        stub_argv = ["", tmp.name]
+
+        with patch(RUN_SCRAPER + ".stdin", new=stub_stdin()):
+            with patch(RUN_SCRAPER + ".argv", stub_argv):
+                await run_from_stdin()
+
+        # check file exists
+        self.assertTrue(os.path.exists(tmp.name))
+        # check it can be loaded
+        with Path(tmp.name).open("r") as tmp_fh:
+            json.load(tmp_fh)
+
+        os.remove(tmp.name)
 
 
 class TestRun(TestCase):
 
+    @patch(RUN_SCRAPER_CLIENT_SESSION, new=stub_client_session)
+    @strict
     async def test(self):
 
-        urls = ["http://www.skysports.com/football/news/11661/10871659/who-won-your-clubs-player-of-the-year-award",
-                "http://www.bbc.co.uk/sport/tennis/37268846",
-                "https://www.theguardian.com/us-news/2018/nov/08/california-borderline-mass-shooting-thousand-oaks"]
+        urls = [site_data.url for _, site_data in PARAMETERIZED_SITEDATA]
 
         results = await run(urls)
 
-        self.assertGreater(len(results), 0)
+        self.assertEqual(len(results), len(PARAMETERIZED_SITEDATA))
         for res in results:
             self.assertIsInstance(res, SiteData)
-        # TODO - this needs to spoof the results of the above site, and then
-        #        spoof the results of the code (potentially)
 
 
-class TestImageTitleParser(TestCase):
+class TestGetHtml(TestCase):
+    """
+    Unit tests on get_html (mainly stability, as this is where the url and
+    connection failures get tripped)
+    """
 
-    _placeholder_url = "ABC"
+    async def setUp(self):
 
-    def check_parser(self, fpath, expected_site_data):
+        # mock out responses
+        self.mock_response = MagicMock()
+        self.mock_response.text = CoroutineMock()
 
-        with open(fpath, "rb") as fh:
-            html = pickle.load(fh)
+        @asynccontextmanager
+        async def get(*args, **kwargs):
+            yield self.mock_response
 
-        parser = ImageTitleParser()
-        parser.feed(html)
+        self.mock_session = MagicMock()
+        self.mock_session.get = get
 
-        site_data = parser.build_site_data(self._placeholder_url)
-        self.assertEqual(expected_site_data, site_data)
+    @strict
+    async def test_gets_text(self):
 
-    def test_bbc(self):
+        await get_html("", self.mock_session)
 
-        fpath = "simple_scraper/data/bbc_sport.p"
+        self.mock_response.text.assert_awaited_once()
 
-        expected_site_data = SiteData(
-            self._placeholder_url,
-            "US Open 2016: Novak Djokovic beats Kyle Edmund in fourth round",
-            set([
-                ImageData(
-                    "https://ichef.bbci.co.uk/onesport/cps/480/cpsprodpb/1171C/production/_91025417_edmund_groan_getty.jpg",
-                    "Edmund was unable to make much of an impression against Djokovic"),
-                ImageData(
-                    "https://ichef.bbci.co.uk/onesport/cps/{width}{hidpi}/cpsprodpb/0994/production/_91025420_djokovic_afp.jpg",
-                    "Djokovic kept Edmund moving around the court"),
-            ])
-        )
-        self.check_parser(fpath, expected_site_data)
+    @strict
+    async def test_asks_for_utf8_on_unidecode_error(self):
 
-    def test_sky(self):
+        expected_html = "ABCD"
+        self.mock_response.text.side_effect = [
+            UnicodeDecodeError("", b"", 0, 0, ""), expected_html]
 
-        fpath = "simple_scraper/data/sky_football.p"
+        html = await get_html("", self.mock_session)
 
-        expected_site_data = SiteData(
-            self._placeholder_url,
-            "Callum Wilson called up to England's 28-man squad for USA, Croatia games",
-            set([
-                ImageData(
-                    "https://e2.365dm.com/18/10/768x432/skysports-callum-wilson-bournemouth_4466759.jpg?20181027165135",
-                    "Callum Wilson has received his first England call-up"),
-                ImageData(
-                    "https://e2.365dm.com/18/09/768x432/skysports-dele-alli-tottenham_4434755.jpg?20180927073333",
-                    "Dele Alli is back in the England squad after injury"),
-            ])
-        )
-        self.check_parser(fpath, expected_site_data)
+        self.assertEqual(expected_html, html)
+        # called once with the error, once without
+        self.assertEqual(self.mock_response.text.await_count, 2)
+        self.mock_response.text.assert_awaited_with("utf-8")
 
-    def test_guardian(self):
+    @strict
+    async def test_invalid_url_logs_recovers(self):
 
-        fpath = "simple_scraper/data/guardian.p"
+        @asynccontextmanager
+        async def get(url):
+            raise InvalidURL(url)
+            yield
 
-        expected_site_data = SiteData(
-            self._placeholder_url,
-            "Thousand Oaks shooting: gunman kills 12 at California western bar",
-            set([
-                ImageData(
-                    "https://i.guim.co.uk/img/media/93c73bb5570f220c9cc794b07dfb9a752a4a9a84/0_892_4200_2519/master/4200.jpg?width=300&quality=85&auto=format&fit=max&s=2a632bf46cdac89b326e6d9aaf8ec3c3",
-                    "Women who fled from the shooting at the Borderline Bar and Grill. Photograph: Mike Nelson/EPA"),
-            ])
-        )
-        self.check_parser(fpath, expected_site_data)
+        self.mock_session.get = get
+
+        with self.assertLogs(logger, logging.ERROR):
+            result = await get_html("", self.mock_session)
+        self.assertEqual(result, "")

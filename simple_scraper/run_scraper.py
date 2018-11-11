@@ -1,130 +1,96 @@
-from asyncio import run as asyncio_run, sleep
-from dataclasses import dataclass
-from html.parser import HTMLParser
-from sys import stdin
-from typing import List, Set
+from asyncio import run as asyncio_run, create_task, sleep
+from dataclasses import asdict
+import json
+import logging
+from pathlib import Path
+from sys import argv, stdin
+from typing import Generator, List
 
-import aiohttp
+from aiohttp import ClientSession
+from aiohttp.client_exceptions import InvalidURL, ClientError
 
+from simple_scraper.models import SiteData
+from simple_scraper.parsers import parse_html
 
-class ImageTitleParser(HTMLParser):
+logging.basicConfig()
+logger = logging.getLogger(__file__)
+logger.setLevel(logging.INFO)
 
-    def __init__(self):
-
-        self._images = set()
-        self._headline = ""
-        self._headline_start = False
-
-        self._image_url = ""
-        self._caption = ""
-        self._image_start = False
-        self._caption_dist = 0
-        # maximum distance captions can be from the image - 50 is found to work,
-        # but is trial and error
-        self._max_caption_dist = 50
-
-        self._caption_tag = ""
-        self._caption_start = False
-
-        super().__init__()
-
-    def handle_starttag(self, tag, attrs):
-
-        if tag == "img":
-            self._image_start = True
-            for attr in attrs:
-                if "http" in attr[1] and not " " in attr[1]:
-                    self._image_url = attr[1]
-
-        if self._image_start:
-            for pair in attrs:
-                for single in pair:
-                    if isinstance(single, str) and "caption" in single:
-                        self._caption_tag = tag
-                        self._caption_start = True
-                else:
-                    self._caption_dist += 1
-                    if self._caption_dist > self._max_caption_dist:
-                        self._image_start = False
-                        self._caption_dist = 0
-
-        if tag == "h1":
-            self._headline_start = True
-
-    def handle_data(self, data):
-        if self._caption_start:
-            if data.strip():
-                self._images.add(ImageData(self._image_url, data.strip()))
-                self._caption_start = False
-
-        if self._headline_start:
-            if data.strip():
-                self._headline = data.strip()
-                self._headline_start = False
-
-    def handle_endtag(self, tag):
-        if tag == "h1" and self._headline_start:
-            self._headline_start = False
-        if tag == self._caption_tag and self._caption_start:
-            self._caption_start = False
-            self._image_start = False
-
-    def build_site_data(self, url):
-        return SiteData(url, self._headline, self._images)
-
-
-@dataclass(frozen=True)
-class ImageData:
-
-    url: str
-    caption: str
-
-
-@dataclass
-class SiteData:
-
-    url: str
-    headline: str
-    images: Set[ImageData]
-
-
-def extract_content(html):
-
-    parser = ImageTitleParser()
-    parser.feed(html)
-    pass
-
-
-async def get_html(url):
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            return await response.text()
-
-
-async def run(all_urls) -> List[SiteData]:
-    for url in all_urls:
-        print(url)
-        await sleep(0)
-    return []
-
-
-async def run_from_file(fpath: str) -> List[SiteData]:
-
-    with open(fpath, "r") as fhandle:
-        return run(fhandle)
+# limit the number of concurrent scrapers
+SIMULTANEOUS_SCRAPERS_LIMIT = 100
 
 
 async def run_from_stdin() -> None:
 
-    def terminate_stdin_on_empty_line():
+    def terminate_stdin_on_empty_line() -> Generator:
         for line in stdin:
             if not line.strip():
                 break
             yield line.strip()
 
-    await run(terminate_stdin_on_empty_line())
-    # todo - file write here
+    results = await run(terminate_stdin_on_empty_line())
+
+    with Path(argv[1]).open("w") as json_fh:
+        json.dump(transform(results), json_fh, indent=4)
+
+
+async def run(all_urls) -> List[SiteData]:
+
+    async with ClientSession() as session:
+
+        # launch scraping tasks
+        tasks = []
+        for url in all_urls:
+            tasks.append(create_task(scrape_url(url, session)))
+            await sleep(0)
+            # limit the number of simultaneous urls being scraped
+            while (len(tasks) - sum([task.done() for task in tasks])
+                    > SIMULTANEOUS_SCRAPERS_LIMIT):
+                await sleep(1)
+
+        # wait for scraping tasks to complete
+        tasks_done = [task.done() for task in tasks]
+        while not all(tasks_done):
+            logger.debug(f"{sum(tasks_done)}/{len(tasks)} urls scraped")
+            await sleep(1)
+            tasks_done = [task.done() for task in tasks]
+
+    # return the results of the scraping tasks
+    return [task.result() for task in tasks if task.result()]
+
+
+async def scrape_url(url: str, session: ClientSession):
+
+    logger.info(f"Started downloading {url}")
+    html = await get_html(url, session)
+    logger.info(f"Parsing {url}")
+    site_data = parse_html(url, html)
+    logger.info(f"Finished {url}")
+    return site_data
+
+
+async def get_html(url: str, session: ClientSession) -> str:
+    try:
+        async with session.get(url) as response:
+            try:
+                return await response.text()
+            except UnicodeDecodeError:
+                # there is an issue with an underpinning library not always
+                # decoding properly. Observed it decoding utf-8 as something
+                # else
+                return await response.text("utf-8")
+    except InvalidURL:
+        logger.exception(f"Invalid URL {url}")
+    except ClientError:
+        logger.exception("Connection Error")
+    return ""
+
+
+def transform(results: List[SiteData]) -> list:
+    return [asdict(res) for res in results]
 
 
 if __name__ == "__main__":
+    print("Please type in the urls to scrape and press enter. An empty line "
+          "will terminate the input and trigger writing to the json.")
     asyncio_run(run_from_stdin())
