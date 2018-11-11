@@ -4,6 +4,7 @@ requests stubbed out.
 
 Also some unit tests for stability of the connetion
 """
+from asyncio import create_task, sleep
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -13,11 +14,12 @@ import pickle
 from tempfile import NamedTemporaryFile
 
 from aiohttp.client_exceptions import InvalidURL
-from asynctest import TestCase, patch, strict
-from asynctest.mock import MagicMock, CoroutineMock
+from asynctest import patch, strict, TestCase
+from asynctest.mock import CoroutineMock, MagicMock
 
 from simple_scraper.models import SiteData
-from simple_scraper.run_scraper import get_html, logger, run, run_from_stdin
+from simple_scraper.run_scraper import get_html, logger, run, run_from_stdin, \
+    SIMULTANEOUS_SCRAPERS_LIMIT
 from simple_scraper.tests.data.website_results import PARAMETERIZED_SITEDATA
 
 logger.setLevel(logging.WARNING)
@@ -94,7 +96,7 @@ class TestRun(TestCase):
 
     @patch(RUN_SCRAPER_CLIENT_SESSION, new=stub_client_session)
     @strict
-    async def test(self):
+    async def test_runs(self):
 
         urls = [site_data.url for _, site_data in PARAMETERIZED_SITEDATA]
 
@@ -103,6 +105,56 @@ class TestRun(TestCase):
         self.assertEqual(len(results), len(PARAMETERIZED_SITEDATA))
         for res in results:
             self.assertIsInstance(res, SiteData)
+
+    @strict
+    async def test_limits_number_of_simultaneous_tasks(self):
+
+        # mock out create_task to return this mock task
+        class MockTask:
+
+            def __init__(self):
+                self.is_done = False
+
+            def done(self):
+                return self.is_done
+
+            def result(self):
+                return ""
+
+        mock_task = MockTask()
+
+        with patch("simple_scraper.run_scraper.create_task"
+                   ) as mock_create_task:
+            with patch("simple_scraper.run_scraper.scrape_url"):
+
+                mock_create_task.return_value = mock_task
+
+                # more urls than the limit
+                urls = [""] * (SIMULTANEOUS_SCRAPERS_LIMIT + 1)
+
+                # launch the scraper
+                scraper_task = create_task(run(urls))
+
+                # let the scraper consume the urls briefly
+                await sleep(0.1)
+
+                # tasks are not done so shouldn't go over the limit
+                self.assertEqual(
+                    mock_create_task.call_count, SIMULTANEOUS_SCRAPERS_LIMIT)
+                # scraper task should be waiting for completion
+                self.assertFalse(scraper_task.done())
+
+                # finish the url tasks
+                mock_task.is_done = True
+
+                # let the scraper consume the urls
+                await sleep(0.2)
+
+                # check all the urls have been consumed
+                self.assertEqual(mock_create_task.call_count, len(urls))
+
+            # check the scraper has completed
+            self.assertTrue(scraper_task.done())
 
 
 class TestGetHtml(TestCase):

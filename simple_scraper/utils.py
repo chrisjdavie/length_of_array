@@ -13,6 +13,11 @@ from simple_scraper.tests import data
 
 
 async def save_new_data():
+    """
+    Scrapes the target_url, prints the results and saves it output path
+    (if uncommented)
+    """
+
     target_url = "https://www.bbc.co.uk/sport/mixed-martial-arts/46168948"
 
     output_path = Path(data.__path__[0] + "/bbc_news.p")

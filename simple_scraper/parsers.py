@@ -36,6 +36,7 @@ class ImageParser(HTMLParser):
     image.
     """
 
+    # bbc has some stock captions that hide the real captions
     _invalid_captions = [
         "Media caption",
         "Image copyright",
@@ -90,6 +91,7 @@ class ImageParser(HTMLParser):
                         # start data search for caption
                         self._caption_tag = tag
                         self._caption_start = True
+                        break
                 else:
                     self._caption_dist += 1
                     if self._caption_dist > self._max_caption_dist:
@@ -112,6 +114,7 @@ class ImageParser(HTMLParser):
 
     @property
     def images(self):
+        """Returns a list of found images"""
         return list(self._images)
 
 
@@ -141,4 +144,3 @@ class TitleParser(HTMLParser):
     def handle_endtag(self, tag):
         if tag == "h1" and self._headline_start:
             self._headline_start = False
-
