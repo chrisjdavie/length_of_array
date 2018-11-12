@@ -1,9 +1,14 @@
 # Run
 
+## Requirements
+
 Requires `Python 3.7`, and requires `aiohttp` to be installed.
 
-Needs `simple_scraper` to be importable (in linux, in the parent folder, `export 
-From the parent folder,  `export PYTHONPATH=$PYTHONPATH:$PWD` will achieve this).
+Needs `simple_scraper` to be importable (in linux, in the parent folder, `export PYTHONPATH=$PYTHONPATH:$PWD` will achieve this).
+
+(I have provided a dockerfile. Instructions for this are below under the heading [Setup with Docker](#setup-with-docker))
+
+## Run
 
 To run, run
 
@@ -22,7 +27,27 @@ An empty line will terminate the scraper.
 In addition to the above requirements, the tests require `parameterized` and `asynctest`. The tests are implemented using `unittest` and can be run using
 
 ` python3.7 -m unittest discover -v simple_scraper/`
- 
+
+# Setup with Docker<a name="setup-with-docker"></a>
+
+After implementing this, I realised maybe not everyone would want to install `Python 3.7`, so I've provided a Dockerfile so you can run it in there. I don't necessarily recommend this if you're not familiar with docker - it can be a bit tricky.
+
+To build the docker image, run
+
+`docker build -f docker/Dockerfile.simple_scraper -t simple_scraper .`
+
+Running the image will run the tests
+
+`docker run simple_scraper`
+
+To use it with a bash shell, run
+
+`docker run -v $PWD/eg_vol_mount:/eg_vol_mount -ti simple_scraper bash`
+
+This mounts a folder `eg_vol_mount` in the present working directory to `/eg_vol_mount` in the docker image, allowing files to be mounted into the docker image so lists of URLs can be scraped.
+
+(there's also a `docker-compose.yml` if you prefer `docker-compose`)
+
 # Sites tested on
 
 The scraper seems to work on the sky sports website, the guardian and bbc sports. It doesn't work well on bbc news, seems to be due to image load being delayed through javascript.
@@ -32,7 +57,7 @@ For a production scraper, the tests would need to be much more extensive.
 # Stability
 
 - on invalid urls, it logs an error and records the traceback
-- if it hits connectivity issues, it logs an error and records the traceback
+- if it hits connectivity issues, it logs an error and the traceback
  
 # Comments on the scraper
 
@@ -40,7 +65,7 @@ For a production scraper, the tests would need to be much more extensive.
 - it sometimes finds valid pictures and captions that aren't rendered on the screen
 - if there are issues with the connection, it logs an error and returns empty strings. It does not try to recover
 - it doesn't test that the image urls are valid, but that would be a valuable addition (but increase the run time)
-- there is a good chance I've missed a bunch of different erros, in terms of connectivity issues and websites this can't handle
+- there is a good chance I've missed a bunch of different errors, in terms of connectivity issues and websites this can't handle
 
 
 # Additonal tests

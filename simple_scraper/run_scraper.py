@@ -83,11 +83,11 @@ async def run(all_urls: Iterable[str]) -> List[SiteData]:
 
 async def scrape_url(url: str, session: ClientSession) -> Optional[SiteData]:
     """Run the scraping for an individual url"""
-    logger.info(f"Started downloading {url}")
+    logger.info("Started downloading %s", url)
     html = await get_html(url, session)
-    logger.info(f"Parsing {url}")
+    logger.info("Parsing %s", url)
     site_data = parse_html(url, html)
-    logger.info(f"Finished {url}")
+    logger.info("Finished %s", url)
     return site_data
 
 
@@ -110,7 +110,7 @@ async def get_html(url: str, session: ClientSession) -> str:
     except InvalidURL:
         logger.exception("Invalid URL %s", url)
     except ClientError:
-        logger.exception("Connection Error")
+        logger.exception("Connection Error %s", url)
     return ""
 
 

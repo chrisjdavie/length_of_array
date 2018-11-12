@@ -1,0 +1,15 @@
+FROM python:3.7
+MAINTAINER Chris Davie "cjdavie@googlemail.com"
+
+ENV APP_DIR /opt/application/simple_scraper
+ENV PYTHONPATH="${APP_DIR}:${PYTHONPATH}"
+
+WORKDIR $APP_DIR
+
+RUN pip install -U pip
+COPY requirements.txt requirements.txt
+RUN pip install -r requirements.txt 
+
+COPY simple_scraper simple_scraper
+
+CMD python -m unittest discover -v .

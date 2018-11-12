@@ -1,0 +1,7 @@
+version: '3'
+services:
+  optimizer-local:
+    build: 
+      context: .
+      dockerfile: docker/Dockerfile.simple_scraper
+    image: simple-scraper
